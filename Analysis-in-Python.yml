@@ -1,74 +1,108 @@
 import requests
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns  # for correlation heatmap
+import seaborn as sns
 
-# Fetch ERC20 token data from the Avalanche network
-url = 'https://api-beta.avascan.info/v2/network/mainnet/evm/43114/erc20'
-params = {
-    'ecosystem': 'avalanche',
-    'includedChainIds': '43114,73772',
-    'limit': '25'
-}
-headers = {
-    'accept': 'application/json'
-}
+# Function to fetch ERC20 token data from the Avalanche network
+def fetch_erc20_token_data():
+    url = 'https://api-beta.avascan.info/v2/network/mainnet/evm/43114/erc20'
+    params = {
+        'ecosystem': 'avalanche',
+        'includedChainIds': '43114,73772',
+        'limit': '100',  # Increase limit to 100
+        'apiKey': 'YOUR_API_KEY'  # Replace with your actual API key
+    }
+    headers = {
+        'accept': 'application/json'
+    }
 
-response = requests.get(url, params=params, headers=headers)
+    try:
+        response = requests.get(url, params=params, headers=headers)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        return response.json()['items']
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching data: {e}")
+        return None
 
-if response.status_code == 200:
-    data = response.json()
-    items = data['items']
-    
-    # Create a DataFrame
-    df = pd.DataFrame(items)
-    
+# Function to clean ERC20 token data
+def clean_erc20_data(data):
+    # Convert data to DataFrame
+    df = pd.DataFrame(data)
+
+    # Remove duplicate entries based on 'chainId' and 'name' columns
+    df.drop_duplicates(subset=['chainId', 'name'], keep='first', inplace=True)
+
     # Convert 'totalSupply' to numeric
     df['totalSupply'] = pd.to_numeric(df['totalSupply'], errors='coerce')
 
     # Fill NaN values in 'holdersCount' with 0
     df['holdersCount'] = df['holdersCount'].fillna(0)
 
+    return df
+
+# Main function to orchestrate data fetching, cleaning, analysis, and visualization
+def main():
+    # Fetch ERC20 token data
+    token_data = fetch_erc20_token_data()
+    if not token_data:
+        return
+
+    # Clean the data
+    df = clean_erc20_data(token_data)
+
     # Compute the correlation matrix
     corr_matrix = df[['totalSupply', 'holdersCount', 'decimals']].corr()
 
-    # Display the cleaned DataFrame and correlation matrix
-    print("Cleaned DataFrame:")
-    print(df)
-    print("\nCorrelation Matrix:")
-    print(corr_matrix)
-
     # Save DataFrame to a CSV file
     df.to_csv('erc20_tokens.csv', index=False)
-    
-    # Display DataFrame in row and column format
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-        print(df)
-else:
-    print(f"Error: response status is {response.status_code}")
-    print(response.json())  # Print the error details
 
-# Data Analysis
-top_tokens_by_total_supply = df.nlargest(5, 'totalSupply')
-top_tokens_by_holders_count = df.nlargest(5, 'holdersCount')
+    # Data Analysis
+    top_tokens_by_total_supply = df.nlargest(5, 'totalSupply')
+    top_tokens_by_holders_count = df.nlargest(5, 'holdersCount')
 
-# Data Visualization
-plt.figure(figsize=(10, 6))
-plt.bar(top_tokens_by_total_supply['symbol'], top_tokens_by_total_supply['totalSupply'])
-plt.xlabel('Token Symbol')
-plt.ylabel('Total Supply')
-plt.title('Top Tokens by Total Supply on Avalanche Network')
-plt.show()
+    # Set seaborn style
+    sns.set_style('whitegrid')
 
-plt.figure(figsize=(10, 6))
-plt.bar(top_tokens_by_holders_count['symbol'], top_tokens_by_holders_count['holdersCount'])
-plt.xlabel('Token Symbol')
-plt.ylabel('Holders Count')
-plt.title('Top Tokens by Holders Count on Avalanche Network')
-plt.show()
+    # Set up the plot
+    fig, axs = plt.subplots(3, 2, figsize=(18, 18))
 
-# Heatmap of the correlation matrix
-plt.figure(figsize=(8, 6))
-sns.heatmap(corr_matrix, annot=True, cmap='coolwarm')
-plt.title('Correlation Matrix')
-plt.show()
+    # Bar plot for top tokens by total supply
+    sns.barplot(x='totalSupply', y='symbol', data=top_tokens_by_total_supply, ax=axs[0, 0], palette='viridis')
+    axs[0, 0].set_xlabel('Total Supply')
+    axs[0, 0].set_ylabel('Token Symbol')
+    axs[0, 0].set_title('Top Tokens by Total Supply on Avalanche Network')
+
+    # Bar plot for top tokens by holders count
+    sns.barplot(x='holdersCount', y='symbol', data=top_tokens_by_holders_count, ax=axs[0, 1], palette='plasma')
+    axs[0, 1].set_xlabel('Holders Count')
+    axs[0, 1].set_ylabel('Token Symbol')
+    axs[0, 1].set_title('Top Tokens by Holders Count on Avalanche Network')
+
+    # Distribution of total supply
+    sns.histplot(df['totalSupply'], bins=20, ax=axs[1, 0], color='skyblue', kde=True)
+    axs[1, 0].set_xlabel('Total Supply')
+    axs[1, 0].set_ylabel('Frequency')
+    axs[1, 0].set_title('Distribution of Total Supply of ERC20 Tokens')
+
+    # Distribution of holders count
+    sns.histplot(df['holdersCount'], bins=20, ax=axs[1, 1], color='salmon', kde=True)
+    axs[1, 1].set_xlabel('Holders Count')
+    axs[1, 1].set_ylabel('Frequency')
+    axs[1, 1].set_title('Distribution of Holders Count of ERC20 Tokens')
+
+    # Display correlation matrix
+    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', ax=axs[2, 0])
+    axs[2, 0].set_title('Correlation Matrix')
+
+    # Scatter plot of total supply vs holders count
+    sns.scatterplot(x='totalSupply', y='holdersCount', data=df, ax=axs[2, 1])
+    axs[2, 1].set_xlabel('Total Supply')
+    axs[2, 1].set_ylabel('Holders Count')
+    axs[2, 1].set_title('Total Supply vs Holders Count')
+
+    # Display plots
+    plt.tight_layout()
+    plt.show()
+
+if __name__ == "__main__":
+    main()
