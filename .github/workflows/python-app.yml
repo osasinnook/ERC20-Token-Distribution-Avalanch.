@@ -1,0 +1,74 @@
+import requests
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns  # for correlation heatmap
+
+# Fetch ERC20 token data from the Avalanche network
+url = 'https://api-beta.avascan.info/v2/network/mainnet/evm/43114/erc20'
+params = {
+    'ecosystem': 'avalanche',
+    'includedChainIds': '43114,73772',
+    'limit': '25'
+}
+headers = {
+    'accept': 'application/json'
+}
+
+response = requests.get(url, params=params, headers=headers)
+
+if response.status_code == 200:
+    data = response.json()
+    items = data['items']
+    
+    # Create a DataFrame
+    df = pd.DataFrame(items)
+    
+    # Convert 'totalSupply' to numeric
+    df['totalSupply'] = pd.to_numeric(df['totalSupply'], errors='coerce')
+
+    # Fill NaN values in 'holdersCount' with 0
+    df['holdersCount'] = df['holdersCount'].fillna(0)
+
+    # Compute the correlation matrix
+    corr_matrix = df[['totalSupply', 'holdersCount', 'decimals']].corr()
+
+    # Display the cleaned DataFrame and correlation matrix
+    print("Cleaned DataFrame:")
+    print(df)
+    print("\nCorrelation Matrix:")
+    print(corr_matrix)
+
+    # Save DataFrame to a CSV file
+    df.to_csv('erc20_tokens.csv', index=False)
+    
+    # Display DataFrame in row and column format
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+        print(df)
+else:
+    print(f"Error: response status is {response.status_code}")
+    print(response.json())  # Print the error details
+
+# Data Analysis
+top_tokens_by_total_supply = df.nlargest(5, 'totalSupply')
+top_tokens_by_holders_count = df.nlargest(5, 'holdersCount')
+
+# Data Visualization
+plt.figure(figsize=(10, 6))
+plt.bar(top_tokens_by_total_supply['symbol'], top_tokens_by_total_supply['totalSupply'])
+plt.xlabel('Token Symbol')
+plt.ylabel('Total Supply')
+plt.title('Top Tokens by Total Supply on Avalanche Network')
+plt.show()
+
+plt.figure(figsize=(10, 6))
+plt.bar(top_tokens_by_holders_count['symbol'], top_tokens_by_holders_count['holdersCount'])
+plt.xlabel('Token Symbol')
+plt.ylabel('Holders Count')
+plt.title('Top Tokens by Holders Count on Avalanche Network')
+plt.show()
+
+# Heatmap of the correlation matrix
+plt.figure(figsize=(8, 6))
+sns.heatmap(corr_matrix, annot=True, cmap='coolwarm')
+plt.title('Correlation Matrix')
+plt.show()
